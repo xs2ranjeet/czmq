@@ -108,11 +108,12 @@ CZMQ_EXPORT void
 CZMQ_EXPORT void
     zcert_test (bool verbose);
 
+CZMQ_EXPORT zcert_t *
+    zcert_new_from_txt (const char *public_txt, const char *secret_txt);
+
 #ifdef CZMQ_BUILD_DRAFT_API
 //  *** Draft method, for development use, may change without warning ***
 //  Accepts public/secret key text pair from caller
-CZMQ_EXPORT zcert_t *
-    zcert_new_from_txt (const char *public_txt, const char *secret_txt);
 
 //  *** Draft method, for development use, may change without warning ***
 //  Unset certificate metadata.

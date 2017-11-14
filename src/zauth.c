@@ -39,6 +39,7 @@ typedef struct {
     bool allow_any;             //  CURVE allows arbitrary clients
     bool terminated;            //  Did caller ask us to quit?
     bool verbose;               //  Verbose logging enabled?
+    zactor_client_fn *client_auth_callback;
 } self_t;
 
 static void
@@ -375,6 +376,15 @@ s_authenticate_curve (self_t *self, zap_request_t *request, unsigned char **meta
         if (self->verbose)
             zsys_info ("zauth: - allowed (CURVE allow any client)");
         return true;
+    } else if(self->client_auth_callback != NULL){
+        bool response = self->client_auth_callback(request->client_key); 
+        if (self->verbose){
+            if(response == true)
+                zsys_info ("zauth: - allowed (CURVE) client_key=%s", request->client_key);  
+            else
+            zsys_info ("zauth: - denied (CURVE) client_key=%s", request->client_key);            
+        }
+        return response;           
     }
     else
     if (self->certstore) {
@@ -504,7 +514,31 @@ zauth (zsock_t *pipe, void *certstore)
 
     //  Signal successful initialization
     zsock_signal (pipe, 0);
+     self->client_auth_callback = NULL;
+    while (!self->terminated) {
+        zsock_t *which = (zsock_t *) zpoller_wait (self->poller, -1);
+        if (which == self->pipe)
+            s_self_handle_pipe (self);
+        else
+        if (which == self->handler)
+            s_self_authenticate (self);
+        else
+        if (zpoller_terminated (self->poller))
+            break;          //  Interrupted
+    }
+    s_self_destroy (&self);
+}
 
+void
+zauth_cb (zsock_t *pipe, void *certstore, zactor_client_fn client_fn)
+{
+    self_t *self = s_self_new (pipe, (zcertstore_t *)certstore);
+    assert (self);
+
+    //  Signal successful initialization
+    zsock_signal (pipe, 0);
+    if (client_fn != NULL)
+        self->client_auth_callback = client_fn;
     while (!self->terminated) {
         zsock_t *which = (zsock_t *) zpoller_wait (self->poller, -1);
         if (which == self->pipe)

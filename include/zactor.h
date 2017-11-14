@@ -29,9 +29,18 @@ extern "C" {
 typedef void (zactor_fn) (
     zsock_t *pipe, void *args);
 
+typedef bool (zactor_client_fn) (
+    const char* client_id);
+
+typedef void (zactor_cb_fn) (
+    zsock_t *pipe, void *args, zactor_client_fn client_fn);
+
 //  Create a new actor passing arbitrary arguments reference.
 CZMQ_EXPORT zactor_t *
     zactor_new (zactor_fn task, void *args);
+
+CZMQ_EXPORT zactor_t *
+    zactor_cb_new (zactor_cb_fn actor, void *args, zactor_client_fn cfn);
 
 //  Destroy an actor.
 CZMQ_EXPORT void

@@ -50,8 +50,10 @@ struct _zactor_t {
 
 typedef struct {
     zactor_fn *handler;
+    zactor_cb_fn *cbhandler;
     zsock_t *pipe;              //  Pipe back to parent
     void *args;                 //  Application arguments
+    zactor_client_fn *clientHandler;
 } shim_t;
 
 
@@ -65,7 +67,10 @@ s_thread_shim (void *args)
 {
     assert (args);
     shim_t *shim = (shim_t *) args;
-    shim->handler (shim->pipe, shim->args);
+    if(shim->handler != NULL)
+        shim->handler (shim->pipe, shim->args);
+    if(shim->cbhandler != NULL)
+        shim->cbhandler (shim->pipe, shim->args, shim->clientHandler);
     //  Do not block, if the other end of the pipe is already deleted
     zsock_set_sndtimeo (shim->pipe, 0);
     zsock_signal (shim->pipe, 0);
@@ -82,7 +87,10 @@ s_thread_shim (void *args)
 {
     assert (args);
     shim_t *shim = (shim_t *) args;
-    shim->handler (shim->pipe, shim->args);
+    if(shim->handler != NULL)
+        shim->handler (shim->pipe, shim->args);
+    if(shim->cbhandler != NULL)
+        shim->cbhandler (shim->pipe, shim->args, shim->clientHandler);
     //  Do not block, if the other end of the pipe is already deleted
     zsock_set_sndtimeo (shim->pipe, 0);
     zsock_signal (shim->pipe, 0);
@@ -118,6 +126,7 @@ zactor_new (zactor_fn actor, void *args)
     shim->pipe = zsys_create_pipe (&self->pipe);
     assert (shim->pipe);
     shim->handler = actor;
+    shim->cbhandler = NULL;
     shim->args = args;
 
 #if defined (__UNIX__)
@@ -151,6 +160,52 @@ zactor_new (zactor_fn actor, void *args)
     return self;
 }
 
+zactor_t *
+zactor_cb_new (zactor_cb_fn actor, void *args, zactor_client_fn cfn)
+{
+    zactor_t *self = (zactor_t *) zmalloc (sizeof (zactor_t));
+    assert (self);
+    self->tag = ZACTOR_TAG;
+    self->destructor = s_zactor_destructor;
+
+    shim_t *shim = (shim_t *) zmalloc (sizeof (shim_t));
+    assert (shim);
+    shim->pipe = zsys_create_pipe (&self->pipe);
+    assert (shim->pipe);
+    shim->cbhandler = actor;
+    shim->handler = NULL;
+    shim->args = args;
+    shim->clientHandler = cfn;
+#if defined (__UNIX__)
+    pthread_t thread;
+    pthread_create (&thread, NULL, s_thread_shim, shim);
+    pthread_detach (thread);
+
+#elif defined (__WINDOWS__)
+    HANDLE handle = (HANDLE) _beginthreadex (
+        NULL,                   //  Handle is private to this process
+        0,                      //  Use a default stack size for new thread
+        &s_thread_shim,         //  Start real thread function via this shim
+        shim,                   //  Which gets arguments shim
+        CREATE_SUSPENDED,       //  Set thread priority before starting it
+        NULL);                  //  We don't use the thread ID
+    assert (handle);
+
+    //  Set child thread priority to same as current
+    int priority = GetThreadPriority (GetCurrentThread ());
+    SetThreadPriority (handle, priority);
+
+    //  Start thread & release resources
+    ResumeThread (handle);
+    CloseHandle (handle);
+#endif
+
+    //  Mandatory handshake for new actor so that constructor returns only
+    //  when actor has also initialized. This eliminates timing issues at
+    //  application start up.
+    zsock_wait (self->pipe);
+    return self;
+}
 
 //  --------------------------------------------------------------------------
 //  Destroy the actor.

@@ -85,8 +85,13 @@ extern "C" {
 //      zsock_wait (auth);
 //
 //  This is the zauth constructor as a zactor_fn:
+
+// zactor_client_fn client_auth_callback = NULL;
 CZMQ_EXPORT void
     zauth (zsock_t *pipe, void *certstore);
+
+CZMQ_EXPORT void
+    zauth_cb (zsock_t *pipe, void *certstore, zactor_client_fn client_fn);
 
 //  Selftest
 CZMQ_EXPORT void
